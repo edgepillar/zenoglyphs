@@ -7,6 +7,13 @@ and qualification are required before accepting a proposal. The configuration
 does not establish that the updater has run or that an advisory or distribution
 review is complete.
 
+The Linux Go job selects [checkout v7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1)
+and [setup-go v7.1.0](https://github.com/actions/setup-go/releases/tag/v7.1.0)
+at their official release commits. Both actions use the runner's Node 24
+runtime. Go remains selected through `go.mod`. Checkout fetches the recorded
+submodule with credential persistence disabled. The workflow runs on
+`push` and `pull_request` with `contents: read`.
+
 ## Resolve the actual source and build inputs
 
 For an action update, resolve the release in its official repository and review
