@@ -93,6 +93,23 @@ def package_locations(rows, modules, root, goroot, cache):
     return roots, packages, locations, bundled
 
 
+def notice_directory_paths(root):
+    pending = [(root, 0)]
+    count = 0
+    while pending:
+        directory, depth = pending.pop()
+        require(directory.resolve(strict=True) == directory, "notice directory traverses a link")
+        for entry in directory.iterdir():
+            count += 1
+            require(count <= 4096, "notice directory entry limit exceeded")
+            mode = entry.lstat().st_mode
+            if stat.S_ISDIR(mode):
+                require(depth < 4, "notice directory depth limit exceeded")
+                pending.append((entry, depth + 1))
+            elif NOTICE.fullmatch(entry.name) or entry.suffix.lower() in NOTICE_TEXT_SUFFIXES:
+                yield entry
+
+
 def notice_paths(base, package_dirs):
     directories = {base}
     for path in package_dirs:
@@ -103,29 +120,34 @@ def notice_paths(base, package_dirs):
         require(directory.resolve(strict=True) == directory, "notice directory traverses a link")
         for index, entry in enumerate(directory.iterdir()):
             require(index < 4096, "notice directory entry limit exceeded")
-            if entry.name.lower() in NOTICE_DIRS and entry.is_dir():
-                require(not entry.is_symlink(), "notice directory is a link")
-                for notice_index, candidate in enumerate(entry.iterdir()):
-                    require(notice_index < 4096, "notice directory entry limit exceeded")
-                    if NOTICE.fullmatch(candidate.name) or candidate.suffix.lower() in NOTICE_TEXT_SUFFIXES:
-                        yield candidate
-            elif NOTICE.fullmatch(entry.name):
+            notice_name = NOTICE.fullmatch(entry.name)
+            if not notice_name and entry.name.lower() not in NOTICE_DIRS:
+                continue
+            mode = entry.lstat().st_mode
+            require(not stat.S_ISLNK(mode), "notice path is a link")
+            if stat.S_ISDIR(mode):
+                yield from notice_directory_paths(entry)
+            elif notice_name:
                 yield entry
 
 
 def read_notice(path):
     flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     require(path.resolve(strict=True) == path, "notice path traverses a link")
-    with os.fdopen(os.open(path, flags), "rb") as stream:
-        first = os.fstat(stream.fileno())
+    fd = os.open(path, flags)
+    try:
+        first = os.fstat(fd)
         require(stat.S_ISREG(first.st_mode) and first.st_nlink == 1 and 0 < first.st_size <= MAX_NOTICE,
                 "notice is empty, oversized or not an independent regular file")
-        data = stream.read(MAX_NOTICE + 1)
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            data = stream.read(MAX_NOTICE + 1)
         last = path.lstat()
         require(len(data) == first.st_size and
                 (first.st_dev, first.st_ino, first.st_size, first.st_mtime_ns, first.st_ctime_ns) ==
                 (last.st_dev, last.st_ino, last.st_size, last.st_mtime_ns, last.st_ctime_ns),
                 "notice changed while reading")
+    finally:
+        os.close(fd)
     return data
 
 
@@ -213,7 +235,7 @@ def main():
         return 0
     except (ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError) as error:
         reason = str(error) if isinstance(error, EvidenceError) else type(error).__name__
-        print(f"Go source notice collection incomplete. {reason}", file=sys.stderr)
+        print(f"::error title=Go source notice collection incomplete::{reason}")
         return 2
 
 

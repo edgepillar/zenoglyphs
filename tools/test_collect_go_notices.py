@@ -1,11 +1,13 @@
 import json
 from pathlib import Path
+import stat
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from collect_go_notices import (
     CLI, GETH_SECP256K1, GO_VERSION, MODULE, NOTICE, ZENON, EvidenceError,
-    collect, json_records, package_locations,
+    collect, json_records, notice_paths, package_locations,
 )
 
 
@@ -80,6 +82,22 @@ class GoNoticesTest(unittest.TestCase):
             self.assertIsNone(NOTICE.fullmatch(path), path)
         with self.assertRaisesRegex(EvidenceError, "duplicate"):
             list(json_records(b'{"Dir":"a","Dir":"b"}'))
+
+    def test_notice_directory_yields_original_files(self):
+        copying = ROOT / "COPYING"
+        nested = copying / "library"
+        license_path = ROOT / "LICENSE"
+        notice_path = nested / "MIT.txt"
+        tree = {
+            ROOT: [copying, license_path, ROOT / "notice.go"],
+            copying: [nested],
+            nested: [notice_path, nested / "code.go"],
+        }
+        with patch.object(Path, "iterdir", lambda path: iter(tree[path])), \
+                patch.object(Path, "resolve", lambda path, **_: path), \
+                patch.object(Path, "lstat", lambda path: SimpleNamespace(
+                    st_mode=stat.S_IFDIR if path in tree else stat.S_IFREG)):
+            self.assertEqual(set(notice_paths(ROOT, {ROOT})), {license_path, notice_path})
 
 
 if __name__ == "__main__":
