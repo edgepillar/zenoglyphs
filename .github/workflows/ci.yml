@@ -39,9 +39,41 @@ jobs:
       NPM_CONFIG_FETCH_RETRIES: '0'
       NPM_CONFIG_FETCH_TIMEOUT: '60000'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: viewer-source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - id: embedded-fonts
+        name: Check the committed viewer fonts against the locked publications
+        run: |
+          timeout --kill-after=10s 65s python3 -B scripts/verify-embedded-fonts.py \
+            --report "$RUNNER_TEMP/zcribe-embedded-fonts.json" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Retain the checked-in font and notice evidence
+        if: ${{ !cancelled() && steps.embedded-fonts.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: zcribe-embedded-fonts
+          path: ${{ runner.temp }}/zcribe-embedded-fonts.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Verify that the checkout includes the viewer source inputs
+        if: ${{ !cancelled() && steps.viewer-source.outcome == 'success' }}
+        run: |
+          missing=0
+          for source in abi cbor envelope useWallet; do
+            path="web/ui/src/wallet/$source.ts"
+            entry="$(git -C ../.. ls-tree --full-tree HEAD -- "$path")"
+            if [[ "$entry" != '100644 blob '* && "$entry" != '100755 blob '* ]]; then
+              printf 'Missing tracked viewer input %s\n' "$path" | tee -a "$GITHUB_STEP_SUMMARY"
+              missing=$((missing + 1))
+            fi
+          done
+          if (( missing > 0 )); then
+            printf 'Viewer source inputs are incomplete. %s tracked modules are missing.\n' "$missing" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          printf 'All four required viewer modules are tracked.\n' | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22.23.5'

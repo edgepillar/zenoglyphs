@@ -32,13 +32,11 @@ The original `go-zenon` gitlink is
 [`go.mod`](../go.mod) must be reviewed with that actual submodule source.
 No submodule or dependency was fetched for this documentation qualification.
 
-The current [Go workflow](../.github/workflows/ci.yml) builds with committed
-`web/dist` content. It does not rebuild or qualify the UI source/lock against
-that embedded output. A successful build/vet/test job does not bind a release
-binary, regenerated viewer, supported platform or signed distribution to the
-reviewed source. The [dependency and distribution review](DEPENDENCY_REVIEW.md)
-retains those unresolved input/output, SBOM, provenance and independent review
-requirements.
+The [Go job](../.github/workflows/ci.yml) builds with committed `web/dist`
+content. The separate viewer job checks the embedded font bytes and verifies
+that the checkout has the source inputs needed for a fresh rebuild. The
+remaining source, output, SBOM, provenance and independent review requirements
+are recorded in the [dependency and distribution review](DEPENDENCY_REVIEW.md).
 
 [`LICENSE`](../LICENSE) and [`NOTICE.md`](../NOTICE.md) retain the project's
 declared GPL-3.0 material and third-party notices unchanged. Preserve original

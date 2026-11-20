@@ -39,12 +39,25 @@ from Git: bind the lock's complete commit ID and review its source and transitiv
 inputs rather than treating the manifest's GitHub shorthand as a pinned release.
 
 The Go job builds with committed `web/dist` bytes. The separate
-`embedded-viewer` job uses Node 22.23.5 with its bundled npm 10.9.9. It checks
-the committed manifests, installs from the lock with lifecycle scripts disabled,
-and verifies the installed `nom-ui` source tree, manifest and original license
-against the locked Git revision. The registry dependencies use npm's locked
-integrity fields. Updating the Git dependency requires reviewing its new source
-and updating the verifier's Git and file digests.
+`embedded-viewer` job compares the checked-in WOFF2 files with the exact
+`@fontsource-variable/jetbrains-mono` and
+`@fontsource-variable/space-grotesk` archives from the npm lock. It records the
+archive member and original notice digests and checks which original notice
+bytes appear in the embedded tree. This check reads the two archives with
+explicit limits and keeps a compact JSON report.
+
+The viewer source check runs before toolchain setup and installation. The
+public snapshot omits `web/ui/src/wallet/abi.ts`, `cbor.ts`, `envelope.ts` and
+`useWallet.ts`, which the EVM pages and vector script require. The root
+`wallet/` ignore rule matches those paths. A complete rebuild needs the
+corresponding distributable source from the original viewer revision.
+
+With those inputs present, the rebuild uses Node 22.23.5 with its bundled
+npm 10.9.9. It checks the committed manifests, installs from the lock with
+lifecycle scripts disabled, and verifies the installed `nom-ui` source tree,
+manifest and original license against the locked Git revision. The registry
+dependencies use npm's locked integrity fields. Reviewing a new Git dependency
+revision includes updating the verifier's Git and file digests.
 
 The viewer job runs the type, lint and protocol vector commands on one
 installation. It builds the viewer and admin pages into a temporary directory

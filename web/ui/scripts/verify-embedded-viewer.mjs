@@ -15,6 +15,7 @@ const nomUi = {
 }
 const nomUiLocation = 'node_modules/nom-ui'
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
+const writeLine = (value) => process.stdout.write(value + '\n')
 
 function gitObject(type, bytes) {
   return createHash('sha1').update(type + ' ' + bytes.length + '\0').update(bytes).digest()
@@ -134,19 +135,19 @@ function compare(rebuiltPath, reportPath) {
   const data = JSON.stringify(report, null, 2) + '\n'
   assert(Buffer.byteLength(data) <= 512 << 10, 'Viewer report exceeds its size limit')
   writeFileSync(reportPath, data, {flag: 'wx', mode: 0o600})
-  console.log('### Embedded viewer rebuild\n')
-  console.log('Source ' + report.sourceCommit)
-  console.log('Result ' + report.status)
-  console.log('npm lock SHA-256 ' + report.inputs.lockSha256)
-  console.log('Committed tree ' + committed.gitTree + ' with ' + committed.fileCount + ' files.')
-  console.log('Rebuilt tree ' + rebuilt.gitTree + ' with ' + rebuilt.fileCount + ' files.')
-  console.log('Matching files ' + report.comparison.matchingFiles + '. Added ' + added.length + ', missing ' + missing.length
+  writeLine('### Embedded viewer rebuild\n')
+  writeLine('Source ' + report.sourceCommit)
+  writeLine('Result ' + report.status)
+  writeLine('npm lock SHA-256 ' + report.inputs.lockSha256)
+  writeLine('Committed tree ' + committed.gitTree + ' with ' + committed.fileCount + ' files.')
+  writeLine('Rebuilt tree ' + rebuilt.gitTree + ' with ' + rebuilt.fileCount + ' files.')
+  writeLine('Matching files ' + report.comparison.matchingFiles + '. Added ' + added.length + ', missing ' + missing.length
     + ', changed at the same path ' + changed.length + '.')
   if (!equal) process.exitCode = 1
 }
 
 const [mode, rebuilt, report] = process.argv.slice(2)
-if (mode === 'inputs' && process.argv.length === 3) console.log(JSON.stringify(lockInputs()))
-else if (mode === 'installed' && process.argv.length === 3) console.log(JSON.stringify(installedGitSource()))
+if (mode === 'inputs' && process.argv.length === 3) writeLine(JSON.stringify(lockInputs()))
+else if (mode === 'installed' && process.argv.length === 3) writeLine(JSON.stringify(installedGitSource()))
 else if (mode === 'compare' && rebuilt && report && process.argv.length === 5) compare(rebuilt, report)
 else throw new Error('Use inputs, installed, or compare <rebuilt-directory> <new-report-file>.')
