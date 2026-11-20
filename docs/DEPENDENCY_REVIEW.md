@@ -117,6 +117,19 @@ reachability decision.
 
 ## Review a particular distribution
 
+After module verification, the Linux Go job uses the same package profile
+and the build input record to collect original notice files from the Go SDK,
+the pinned source trees and the selected module cache. It reads the package
+directories and their ancestors, including their notice directories. When cgo
+selects go-ethereum's bundled secp256k1 source, the bundle also includes that
+source's original notice. The manifest links each source path to a SHA-256
+object and records modules for which no notice file was observed. The job
+keeps the manifest and one original payload per digest for review.
+
+Use this evidence for the exact Go binary. Embedded viewer assets, runtime
+system libraries, notices carried only in source headers, corresponding
+source and any relinking obligations require their own distribution review.
+
 Start with [`NOTICE.md`](../NOTICE.md) and [`LICENSE`](../LICENSE). Review the
 project/go-zenon GPL material, the separately attributed p5.js test asset and all
 UI assets, fonts, linked dependencies and transitive material that reaches the

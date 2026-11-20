@@ -47,7 +47,8 @@ jobs:
       - run: go test ./...
       - name: Verify the downloaded Go modules
         run: go mod verify
-      - name: Bind the built binary to its source and module checksums
+      - id: go-inputs
+        name: Bind the built binary to its source and module checksums
         run: |
           python3 -B tools/verify_go_inputs.py --source-commit "$REVIEW_SOURCE_COMMIT" \
             --before "$RUNNER_TEMP/zcribe-go-source.json" --binary "$RUNNER_TEMP/zcribe-ci" \
@@ -66,6 +67,20 @@ jobs:
             --binary "$RUNNER_TEMP/zcribe-ci" --inputs "$RUNNER_TEMP/zcribe-go-inputs.json" \
             --scanner "$RUNNER_TEMP/zcribe-review-tools/govulncheck" \
             --report "$RUNNER_TEMP/zcribe-go-vulnerabilities.json"
+      - id: go-notices
+        name: Collect original notices for the selected Go packages
+        if: ${{ !cancelled() && steps.go-inputs.outcome == 'success' }}
+        run: |
+          python3 -B tools/collect_go_notices.py --source-commit "$REVIEW_SOURCE_COMMIT" \
+            --inputs "$RUNNER_TEMP/zcribe-go-inputs.json" --output "$RUNNER_TEMP/zcribe-go-notices"
+      - name: Retain Go source notice evidence
+        if: ${{ !cancelled() && steps.go-notices.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: zcribe-go-notices
+          path: ${{ runner.temp }}/zcribe-go-notices
+          if-no-files-found: error
+          retention-days: 14
       - name: Retain the Go build input records
         if: ${{ !cancelled() && steps.go-source.outcome != 'skipped' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

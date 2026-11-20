@@ -16,3 +16,10 @@ disagreeing.
 Original font notices live under `web/dist/notices/` in the embedded viewer
 and under `web/ui/public/notices/` for the next viewer build. The font
 check compares both copies with the locked npm archives.
+
+The CI artifact `zcribe-go-notices` records original notice files for the
+Go packages selected for a particular `zcribe` build. Its manifest identifies
+the binary, the source and go-zenon revisions, the Go build profile and the
+paths and checksums of the retained notice files. See
+[dependency and distribution review](docs/DEPENDENCY_REVIEW.md) for the
+remaining distribution checks.
