@@ -30,6 +30,14 @@ jwt.hex
 network-private-key
 wallet/
 
+# The viewer's browser source shares a directory name with runtime wallets.
+!/web/ui/src/wallet/
+/web/ui/src/wallet/*
+!/web/ui/src/wallet/abi.ts
+!/web/ui/src/wallet/cbor.ts
+!/web/ui/src/wallet/envelope.ts
+!/web/ui/src/wallet/useWallet.ts
+
 # Local state.
 *.db
 *.db-shm

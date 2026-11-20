@@ -85,11 +85,14 @@ bytes in the embedded tree and the viewer's public source tree. This check
 reads the two archives with explicit limits and keeps a compact JSON report.
 [Fontsource publication source](https://github.com/fontsource/font-files/tree/02b28c06b126c852a5b966b44aef777ca923f6f6/fonts/variable)
 
-The viewer source check runs before toolchain setup and installation. The
-public snapshot omits `web/ui/src/wallet/abi.ts`, `cbor.ts`, `envelope.ts` and
-`useWallet.ts`, which the EVM pages and vector script require. The root
-`wallet/` ignore rule matches those paths. A complete rebuild needs the
-corresponding distributable source from the original viewer revision.
+The viewer preflight records the committed UI source and embedded trees, the
+npm lock and the four wallet source file states before toolchain setup and
+installation. The public snapshot omits `web/ui/src/wallet/abi.ts`, `cbor.ts`,
+`envelope.ts` and `useWallet.ts`, which the EVM pages and vector script require.
+[Git's ignore rules](../.gitignore) allow those four files through ordinary
+staging and keep other wallet paths ignored. The preflight checks both cases
+and retains its report when source files are missing. A complete rebuild
+needs the corresponding distributable source from the original viewer revision.
 
 With those inputs present, the rebuild uses Node 22.23.5 with its bundled
 npm 10.9.9. It checks the committed manifests, installs from the lock with

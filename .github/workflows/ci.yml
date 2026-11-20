@@ -123,24 +123,20 @@ jobs:
           path: ${{ runner.temp }}/zcribe-embedded-fonts.json
           if-no-files-found: error
           retention-days: 14
-      - name: Verify that the checkout includes the viewer source inputs
+      - id: viewer-preflight
+        name: Verify the viewer source inputs and npm lock
         if: ${{ !cancelled() && steps.viewer-source.outcome == 'success' }}
         run: |
-          missing=0
-          for source in abi cbor envelope useWallet; do
-            path="web/ui/src/wallet/$source.ts"
-            entry="$(git -C ../.. ls-tree --full-tree HEAD -- "$path")"
-            if [[ "$entry" != '100644 blob '* && "$entry" != '100755 blob '* ]]; then
-              printf 'Missing tracked viewer input %s\n' "$path" | tee -a "$GITHUB_STEP_SUMMARY"
-              missing=$((missing + 1))
-            fi
-          done
-          if (( missing > 0 )); then
-            printf 'Viewer source inputs are incomplete. %s tracked modules are missing.\n' "$missing" \
-              | tee -a "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-          printf 'All four required viewer modules are tracked.\n' | tee -a "$GITHUB_STEP_SUMMARY"
+          node scripts/verify-embedded-viewer.mjs sources "$RUNNER_TEMP/zcribe-viewer-preflight.json" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Retain the viewer source preflight result
+        if: ${{ !cancelled() && (steps.viewer-preflight.outcome == 'success' || steps.viewer-preflight.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: zcribe-viewer-preflight
+          path: ${{ runner.temp }}/zcribe-viewer-preflight.json
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22.23.5'

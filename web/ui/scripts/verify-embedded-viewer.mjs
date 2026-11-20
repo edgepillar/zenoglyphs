@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import {execFileSync} from 'node:child_process'
+import {execFileSync, spawnSync} from 'node:child_process'
 import {createHash} from 'node:crypto'
 import {lstatSync, readFileSync, readdirSync, writeFileSync} from 'node:fs'
 import {join, resolve} from 'node:path'
@@ -14,6 +14,14 @@ const nomUi = {
   licenseSha256: '683675e786f49e060467fcfcb7796b4d663d16c0de92997ed8a3c0711ccd026d',
 }
 const nomUiLocation = 'node_modules/nom-ui'
+const walletSources = ['abi.ts', 'cbor.ts', 'envelope.ts', 'useWallet.ts']
+const ignoredWalletPaths = [
+  'wallet/local-fixture.json',
+  'data/wallet/local-fixture.json',
+  'web/ui/src/wallet/local-fixture.json',
+  'web/ui/src/wallet/local-fixture.ts',
+  'web/ui/src/wallet/local-fixture.key',
+]
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const writeLine = (value) => process.stdout.write(value + '\n')
 
@@ -57,6 +65,67 @@ function lockInputs() {
     registryLocations++
   }
   return {manifestSha256: sha256(manifest), lockSha256: sha256(lock), registryLocations, nomUi}
+}
+
+function ignored(path) {
+  const result = spawnSync('git', ['check-ignore', '--quiet', '--no-index', '--', path],
+    {cwd: repo, timeout: 10000})
+  assert(result.status === 0 || result.status === 1, 'Git ignore check did not complete')
+  return result.status === 0
+}
+
+function sourceFile(path) {
+  const entry = git('ls-tree', '--full-tree', 'HEAD', '--', path)
+  const gitIgnored = ignored(path)
+  if (!entry) return {path, gitIgnored, status: 'missing'}
+  const match = /^(100644|100755) blob ([0-9a-f]{40})\t(.+)$/.exec(entry)
+  if (!match || match[3] !== path) return {path, gitIgnored, status: 'invalid-entry'}
+  const info = lstatSync(join(repo, path))
+  assert(info.isFile() && info.size <= 1 << 20, 'Expected a bounded regular viewer source file')
+  const bytes = trackedFile(path)
+  return {path, gitIgnored, status: 'tracked', bytes: bytes.length, sha256: sha256(bytes), gitBlob: match[2]}
+}
+
+function writeReport(path, report) {
+  const data = JSON.stringify(report, null, 2) + '\n'
+  assert(Buffer.byteLength(data) <= 512 << 10, 'Viewer report exceeds its size limit')
+  writeFileSync(path, data, {flag: 'wx', mode: 0o600})
+  return sha256(data)
+}
+
+function sourcePreflight(reportPath) {
+  const inputs = lockInputs()
+  const sources = walletSources.map(name => sourceFile('web/ui/src/wallet/' + name))
+  const ignoredControls = ignoredWalletPaths.map(path => ({path, ignored: ignored(path)}))
+  const unavailable = sources.filter(row => row.status !== 'tracked')
+  const ignoreRulesMatch = sources.every(row => !row.gitIgnored) && ignoredControls.every(row => row.ignored)
+  const ready = unavailable.length === 0 && ignoreRulesMatch
+  const report = {
+    schema: 1,
+    status: ready ? 'VIEWER_PREFLIGHT_PASSED' : 'VIEWER_PREFLIGHT_INCOMPLETE',
+    sourceCommit: git('rev-parse', '--verify', 'HEAD'),
+    sourceTree: git('rev-parse', '--verify', 'HEAD:web/ui/src'),
+    embeddedTree: git('rev-parse', '--verify', 'HEAD:web/dist'),
+    gitIgnoreSHA256: sha256(trackedFile('.gitignore')),
+    runId: process.env.GITHUB_RUN_ID ?? null,
+    attempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
+    preflightNode: process.version,
+    inputs,
+    sources,
+    ignoredControls,
+    ignoreRulesMatch,
+  }
+  const reportSHA256 = writeReport(reportPath, report)
+  writeLine('### Embedded viewer source preflight\n')
+  writeLine('Source ' + report.sourceCommit + ' and embedded tree ' + report.embeddedTree + '.')
+  writeLine('Checked ' + inputs.registryLocations + ' registry lock entries and the pinned nom-ui commit.')
+  for (const row of unavailable) writeLine('- ' + row.path + ' is ' + row.status + '.')
+  writeLine('::notice title=Viewer source preflight::' + JSON.stringify({
+    sourceCommit: report.sourceCommit, status: report.status, reportSHA256,
+    registryLocations: inputs.registryLocations, ignoreRulesMatch,
+    unavailableSources: unavailable.map(row => row.path),
+  }))
+  if (!ready) process.exitCode = 1
 }
 
 function inventory(root) {
@@ -132,9 +201,7 @@ function compare(rebuiltPath, reportPath) {
     rebuilt,
     comparison: {equal, added, missing, changed, matchingFiles: paths.length - added.length - missing.length - changed.length},
   }
-  const data = JSON.stringify(report, null, 2) + '\n'
-  assert(Buffer.byteLength(data) <= 512 << 10, 'Viewer report exceeds its size limit')
-  writeFileSync(reportPath, data, {flag: 'wx', mode: 0o600})
+  writeReport(reportPath, report)
   writeLine('### Embedded viewer rebuild\n')
   writeLine('Source ' + report.sourceCommit)
   writeLine('Result ' + report.status)
@@ -146,8 +213,9 @@ function compare(rebuiltPath, reportPath) {
   if (!equal) process.exitCode = 1
 }
 
-const [mode, rebuilt, report] = process.argv.slice(2)
+const [mode, input, report] = process.argv.slice(2)
 if (mode === 'inputs' && process.argv.length === 3) writeLine(JSON.stringify(lockInputs()))
 else if (mode === 'installed' && process.argv.length === 3) writeLine(JSON.stringify(installedGitSource()))
-else if (mode === 'compare' && rebuilt && report && process.argv.length === 5) compare(rebuilt, report)
-else throw new Error('Use inputs, installed, or compare <rebuilt-directory> <new-report-file>.')
+else if (mode === 'sources' && input && process.argv.length === 4) sourcePreflight(input)
+else if (mode === 'compare' && input && report && process.argv.length === 5) compare(input, report)
+else throw new Error('Use inputs, installed, sources <new-report-file>, or compare <rebuilt-directory> <new-report-file>.')
