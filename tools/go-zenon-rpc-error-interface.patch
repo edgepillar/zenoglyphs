@@ -1,0 +1,16 @@
+diff --git a/common/errors.go b/common/errors.go
+--- a/common/errors.go
++++ b/common/errors.go
+@@ -13,4 +13,2 @@ import (
+ 	"github.com/pkg/errors"
+-
+-	"github.com/zenon-network/go-zenon/rpc/server"
+ )
+@@ -25,5 +23,5 @@ func NewErrorWCode(code int, errStr string) ErrorWCode {
+ type ErrorWCode interface {
+-	server.Error
+-	//AddSubErr(err error) ErrorWCode
++	error
++	ErrorCode() int
+ 	AddDetail(detail string) ErrorWCode
+ }

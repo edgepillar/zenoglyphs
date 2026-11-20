@@ -1,0 +1,143 @@
+name: Go dependency compatibility
+
+on:
+  push:
+    paths:
+      - '.github/workflows/go-ethereum-compatibility.yml'
+      - 'tools/go-zenon-rpc-error-interface.patch'
+
+permissions:
+  contents: read
+
+jobs:
+  go-ethereum:
+    if: ${{ github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      GOENV: 'off'
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+      GOTELEMETRY: 'off'
+      GOPROXY: https://proxy.golang.org
+      GOSUMDB: sum.golang.org
+      GOPRIVATE: ''
+      GONOSUMDB: 'none'
+      GOFLAGS: '-mod=readonly -trimpath'
+      GETH_VERSION: v1.17.10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          submodules: true
+          persist-credentials: false
+      - name: Verify the original source inputs
+        run: |
+          test "$(git -C go-zenon rev-parse HEAD)" = 590f43ca7a24dccd8e883bc8903a0cb02e54528a
+          python3 -B tools/verify_go_inputs.py --source-commit "$GITHUB_SHA" \
+            > "$RUNNER_TEMP/geth-preview-original.json"
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: '1.26.11'
+          cache: false
+      - id: candidate
+        name: Prepare a source-bound compatibility candidate
+        env:
+          GIT_AUTHOR_NAME: edgepillar
+          GIT_AUTHOR_EMAIL: 179010287+edgepillar@users.noreply.github.com
+          GIT_COMMITTER_NAME: edgepillar
+          GIT_COMMITTER_EMAIL: 179010287+edgepillar@users.noreply.github.com
+        run: |
+          test "$(go env GOVERSION)" = go1.26.11
+          commit_date="$(git show -s --format=%ct HEAD) +0000"
+          export GIT_AUTHOR_DATE="$commit_date" GIT_COMMITTER_DATE="$commit_date"
+          patch="$GITHUB_WORKSPACE/tools/go-zenon-rpc-error-interface.patch"
+          git -C go-zenon apply --check "$patch"
+          git -C go-zenon apply --index "$patch"
+          git -C go-zenon diff --cached --check
+          git -C go-zenon -c commit.gpgsign=false commit -m 'Decouple common errors from the RPC server'
+          go mod edit -go=1.25.0 -require="github.com/ethereum/go-ethereum@$GETH_VERSION"
+          GOFLAGS='' timeout --kill-after=5s 150s go mod tidy -compat=1.25
+          test "$(go list -m -f '{{.Version}}' github.com/ethereum/go-ethereum)" = "$GETH_VERSION"
+          grep -Fxq "github.com/ethereum/go-ethereum $GETH_VERSION h1:b3WO+xux3pItpm13kqT5Xddv01zOxBFZxQgk/Ate4/M=" go.sum
+          grep -Fxq "github.com/ethereum/go-ethereum $GETH_VERSION/go.mod h1:7ruvgGPsxGXtaSFJQKkSGwbKghz8V/G1xuDVY8NqQQM=" go.sum
+          git add -- go.mod go.sum go-zenon
+          git -c commit.gpgsign=false commit -m 'Prepare the go-ethereum compatibility candidate'
+          candidate="$(git rev-parse HEAD)"
+          printf 'commit=%s\n' "$candidate" >> "$GITHUB_OUTPUT"
+          python3 -B tools/verify_go_inputs.py --source-commit "$candidate" \
+            > "$RUNNER_TEMP/geth-preview-source.json"
+      - name: Build and test the candidate
+        run: |
+          go list -deps ./cmd/zcribe > "$RUNNER_TEMP/geth-preview-dependencies.txt"
+          if grep -Fxq 'github.com/zenon-network/go-zenon/rpc/server' "$RUNNER_TEMP/geth-preview-dependencies.txt"; then
+            echo 'The CLI still includes the go-zenon RPC server.'
+            exit 1
+          fi
+          go build -buildvcs=true -o "$RUNNER_TEMP/geth-preview-zcribe" ./cmd/zcribe
+          go vet ./...
+          go test ./...
+          go mod verify
+      - name: Bind the candidate binary to its inputs
+        env:
+          CANDIDATE_COMMIT: ${{ steps.candidate.outputs.commit }}
+        run: |
+          python3 -B tools/verify_go_inputs.py --source-commit "$CANDIDATE_COMMIT" \
+            --before "$RUNNER_TEMP/geth-preview-source.json" --binary "$RUNNER_TEMP/geth-preview-zcribe" \
+            > "$RUNNER_TEMP/geth-preview-inputs.json"
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = Path(os.environ["RUNNER_TEMP"]) / "geth-preview-inputs.json"
+          result = json.loads(report.read_text())
+          binary = result["binary"]
+          modules = binary["selectedModules"]
+          versions = {row["module"]: row["version"] for row in modules}
+          if versions.get("github.com/ethereum/go-ethereum") != os.environ["GETH_VERSION"]:
+              raise SystemExit("The built CLI uses a different go-ethereum version.")
+          evidence = {
+              "source": result["source"],
+              "binarySHA256": binary["sha256"],
+              "binaryBytes": binary["bytes"],
+              "goEthereumVersion": os.environ["GETH_VERSION"],
+          }
+          print("::notice title=Zcribe dependency candidate::" + json.dumps(evidence, separators=(",", ":")))
+          PY
+      - name: Scan the candidate source and binary
+        env:
+          CANDIDATE_COMMIT: ${{ steps.candidate.outputs.commit }}
+          GOBIN: ${{ runner.temp }}/geth-preview-tools
+        run: |
+          GOFLAGS='-trimpath' timeout --kill-after=5s 90s go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+          python3 -B tools/review_go_vulnerabilities.py --source-commit "$CANDIDATE_COMMIT" \
+            --binary "$RUNNER_TEMP/geth-preview-zcribe" --inputs "$RUNNER_TEMP/geth-preview-inputs.json" \
+            --scanner "$GOBIN/govulncheck" --report "$RUNNER_TEMP/geth-preview-vulnerabilities.json"
+      - name: Confirm previously observed go-ethereum findings are absent
+        run: |
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = Path(os.environ["RUNNER_TEMP"]) / "geth-preview-vulnerabilities.json"
+          scans = json.loads(report.read_text())["scans"]
+          reviewed = {"GO-2023-2046", "GO-2024-2819", "GO-2026-4314", "GO-2026-4315", "GO-2026-4508"}
+          for mode in ("source", "binary"):
+              findings = scans[mode]["observation"]["findings"]
+              if reviewed & {row["id"] for row in findings}:
+                  raise SystemExit(f"A previously observed go-ethereum finding remains in the {mode} scan.")
+          print("All five previously observed go-ethereum advisories are absent from both scans.")
+          PY
+      - name: Retain the candidate dependency locks and verification records
+        if: ${{ !cancelled() && steps.candidate.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: go-ethereum-compatibility
+          path: |
+            go.mod
+            go.sum
+            ${{ runner.temp }}/geth-preview-*.json
+          if-no-files-found: error
+          retention-days: 7

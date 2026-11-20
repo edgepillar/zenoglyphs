@@ -59,6 +59,15 @@ each mode, and any fixed versions the scanner reported. The artifact retains
 the package findings and the complete comparison. A larger comparison stays
 in the artifact and the annotation records its row count.
 
+The fork compatibility workflow evaluates go-ethereum v1.17.10 on Go 1.26.11.
+It applies a patch to the recorded go-zenon source so the common error type
+keeps its error message, code and detail methods without importing the RPC
+server. The job prepares separate candidate commits and locks, checks the CLI
+dependency graph and runs the regular Go build, tests and scans. The retained
+records bind those results to the candidate. Adoption requires a reviewed
+go-zenon revision and fresh verification with that revision pinned in the
+published source.
+
 `web/ui/go.mod` is an intentional module boundary that excludes UI files and
 `node_modules` from the parent Go traversal. It is not a separately built Go
 application and is not a second Go updater root. Review real UI inputs through
