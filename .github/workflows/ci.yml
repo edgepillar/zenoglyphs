@@ -12,19 +12,56 @@ jobs:
   go:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      GOENV: 'off'
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+      GOTELEMETRY: 'off'
+      GOFLAGS: '-mod=readonly -trimpath'
+      REVIEW_SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           submodules: true
           persist-credentials: false
+          allow-unsafe-pr-checkout: false
+      - name: Exercise Go build input checks
+        run: python3 -B -m unittest discover -s tools -p 'test_verify_go_inputs.py'
+      - id: go-source
+        name: Verify the selected Go and embedded viewer inputs
+        run: |
+          python3 -B tools/verify_go_inputs.py --source-commit "$REVIEW_SOURCE_COMMIT" \
+            > "$RUNNER_TEMP/zcribe-go-source.json"
 
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26.11'
+          cache-dependency-path: go.sum
 
-      - run: go build ./...
+      - name: Build the zcribe binary with the selected SDK
+        run: |
+          test "$(go env GOVERSION)" = go1.26.11
+          go build -buildvcs=true -o "$RUNNER_TEMP/zcribe-ci" ./cmd/zcribe
       - run: go vet ./...
       - run: go test ./...
+      - name: Verify the downloaded Go modules
+        run: go mod verify
+      - name: Bind the built binary to its source and module checksums
+        run: |
+          python3 -B tools/verify_go_inputs.py --source-commit "$REVIEW_SOURCE_COMMIT" \
+            --before "$RUNNER_TEMP/zcribe-go-source.json" --binary "$RUNNER_TEMP/zcribe-ci" \
+            > "$RUNNER_TEMP/zcribe-go-inputs.json"
+      - name: Retain the Go build input records
+        if: ${{ !cancelled() && steps.go-source.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: zcribe-go-inputs
+          path: |
+            ${{ runner.temp }}/zcribe-go-source.json
+            ${{ runner.temp }}/zcribe-go-inputs.json
+          if-no-files-found: error
+          retention-days: 14
 
   embedded-viewer:
     runs-on: ubuntu-latest

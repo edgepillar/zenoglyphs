@@ -10,7 +10,7 @@ review is complete.
 The Linux Go job selects [checkout v7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1)
 and [setup-go v7.1.0](https://github.com/actions/setup-go/releases/tag/v7.1.0)
 at their official release commits. Both actions use the runner's Node 24
-runtime. Go remains selected through `go.mod`. Checkout fetches the recorded
+runtime. The Linux job uses Go 1.26.11. Checkout fetches the recorded
 submodule with credential persistence disabled. The workflow runs on
 `push` and `pull_request` with `contents: read`.
 
@@ -29,6 +29,17 @@ Record and review that gitlink separately from module proposals. Hashing, PoW
 and key behavior depend on the effective replacement source. Build, vet,
 relevant behavior tests and integrity checks must use the accepted submodule
 commit; the placeholder module version is not its source identity.
+
+The Linux job records the source and submodule trees, the committed module file
+digests and the embedded viewer tree before it builds `zcribe`. It builds the
+CLI once, runs the root-module vet and test commands and verifies the module
+cache. The post-build check compares the source snapshot and reads the binary's
+build metadata. It requires the selected source revision, the local go-zenon
+replacement and the committed `go.sum` checksum for every other selected module.
+The artifact contains these records and the executable's SHA-256 and size.
+[Go module verification](https://go.dev/ref/mod#go-mod-verify) ·
+[Go binary build information](https://pkg.go.dev/cmd/go#hdr-Print_Go_version) ·
+[Go 1.26 release history](https://go.dev/doc/devel/release#go1.26.11)
 
 `web/ui/go.mod` is an intentional module boundary that excludes UI files and
 `node_modules` from the parent Go traversal. It is not a separately built Go
