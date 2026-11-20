@@ -38,12 +38,23 @@ versions, integrity and install-script decisions. The `nom-ui` dependency comes
 from Git: bind the lock's complete commit ID and review its source and transitive
 inputs rather than treating the manifest's GitHub shorthand as a pinned release.
 
-The current Go workflow builds with committed `web/dist` bytes. It does not
-rebuild or typecheck `web/ui`, nor run its lint/vector commands. A dependency
-update must separately qualify those steps in a bounded environment and compare
-the resulting distribution with the reviewed UI source and build inputs. Green
-Go CI alone does not establish that the embedded viewer matches the updated
-source or lock.
+The Go job builds with committed `web/dist` bytes. The separate
+`embedded-viewer` job uses Node 22.23.5 with its bundled npm 10.9.9. It checks
+the committed manifests, installs from the lock with lifecycle scripts disabled,
+and verifies the installed `nom-ui` source tree, manifest and original license
+against the locked Git revision. The registry dependencies use npm's locked
+integrity fields. Updating the Git dependency requires reviewing its new source
+and updating the verifier's Git and file digests.
+
+The viewer job runs the type, lint and protocol vector commands on one
+installation. It builds the viewer and admin pages into a temporary directory
+and compares their complete path sets and file bytes with the tracked Go embed
+inputs. A difference fails the comparison. The job retains a compact,
+commit-bound JSON inventory with both Git tree identifiers and SHA-256 digests.
+The existing Go build continues to consume the committed viewer.
+[Node release archive](https://nodejs.org/en/download/archive/v22.23.5),
+[npm clean install](https://docs.npmjs.com/cli/v10/commands/npm-ci/),
+[Locked nom-ui source](https://github.com/digitalSloth/nom-ui/tree/63f755a52cf6ee3665d3755755c506e3aa191bd4)
 
 Triage advisories against exact resolved versions or replacement commits and the
 advisory revision. Identify the call site or build step, runtime/build/test role
