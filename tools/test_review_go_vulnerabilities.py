@@ -71,3 +71,33 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(len(output), 64)
         self.assertFalse(execution["outputComplete"])
         self.assertEqual(execution["terminationReason"], "stdout_limit_exceeded")
+
+    def test_symbol_review_retains_the_highest_evidence_for_each_module_version(self):
+        first = {"id": ADVISORY, "module": DEPENDENCY, "version": "v1.2.3", "level": "module",
+                 "fixedVersion": "v1.2.4"}
+        source = {"findings": [first, {**first, "level": "symbol"}]}
+        binary = {"findings": [{**first, "level": "package"}, {**first, "version": "v1.2.2", "level": "symbol"},
+                               {**first, "module": "example.org/other", "level": "package"}]}
+        self.assertEqual(review.compare_symbol_findings(source, binary), [
+            {"id": ADVISORY, "module": DEPENDENCY, "version": "v1.2.2", "sourceLevel": None,
+             "binaryLevel": "symbol", "fixedVersions": ["v1.2.4"]},
+            {"id": ADVISORY, "module": DEPENDENCY, "version": "v1.2.3", "sourceLevel": "symbol",
+             "binaryLevel": "package", "fixedVersions": ["v1.2.4"]},
+        ])
+
+    def test_stdlib_go_tag_and_semver_bind_to_the_same_release(self):
+        row = {"id": ADVISORY, "module": "stdlib", "version": "go1.26.11", "level": "symbol",
+               "fixedVersion": ""}
+        rows = review.compare_symbol_findings({"findings": [row]},
+                                              {"findings": [{**row, "version": "v1.26.11"}]})
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["version"], "v1.26.11")
+        self.assertEqual(rows[0]["sourceLevel"], rows[0]["binaryLevel"])
+
+    def test_annotation_preserves_small_results_and_defers_overflow_to_the_artifact(self):
+        items = [{"id": ADVISORY, "module": DEPENDENCY, "version": "v1.2.3",
+                  "sourceLevel": "symbol", "binaryLevel": None, "fixedVersions": []}]
+        revision = "a" * 40
+        self.assertEqual(json.loads(review.review_notice(revision, items))["symbolReview"], items)
+        overflow = json.loads(review.review_notice(revision, items * 100))
+        self.assertEqual(overflow, {"revision": revision, "symbolReviewCount": 100, "details": "artifact"})

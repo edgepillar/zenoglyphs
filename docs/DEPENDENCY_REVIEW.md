@@ -53,6 +53,12 @@ and binary symbols in the context of the shipped configuration.
 [Govulncheck](https://pkg.go.dev/golang.org/x/vuln@v1.10.0/cmd/govulncheck) ·
 [Go vulnerability database](https://go.dev/doc/security/vuln/)
 
+The CI annotation lists advisories with symbol evidence in either scan. Each
+row identifies the module version, the highest evidence level reported in
+each mode, and any fixed versions the scanner reported. The artifact retains
+the package findings and the complete comparison. A larger comparison stays
+in the artifact and the annotation records its row count.
+
 `web/ui/go.mod` is an intentional module boundary that excludes UI files and
 `node_modules` from the parent Go traversal. It is not a separately built Go
 application and is not a second Go updater root. Review real UI inputs through

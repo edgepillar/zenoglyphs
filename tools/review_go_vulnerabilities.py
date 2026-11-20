@@ -25,6 +25,7 @@ DATABASE = "https://vuln.go.dev"
 DATABASE_TIME = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z")
 GO_ID = re.compile(r"GO-\d{4}-\d{4,}")
 LIMITS = {"stdout": 8 << 20, "stderr": 128 << 10}
+REVIEW_NOTICE_BYTES = 4096
 
 
 def run_scan(argv, root, env, seconds):
@@ -175,6 +176,34 @@ def summarize(raw, mode, linked):
             "advisoriesWithSymbolEvidence": len({row["id"] for row in rows if row["level"] == "symbol"})}
 
 
+def compare_symbol_findings(source, binary):
+    levels = {None: 0, "module": 1, "package": 2, "symbol": 3}
+    groups = {}
+    for field, scan in (("sourceLevel", source), ("binaryLevel", binary)):
+        for finding in scan["findings"]:
+            advisory, module, version = finding["id"], finding["module"], finding["version"]
+            if module == "stdlib" and re.fullmatch(r"go1\.\d+\.\d+", version):
+                version = "v" + version[2:]
+            key = (advisory, module, version)
+            row = groups.setdefault(key, {"id": advisory, "module": module, "version": version,
+                                          "sourceLevel": None, "binaryLevel": None, "fixedVersions": set()})
+            if levels[finding["level"]] > levels[row[field]]:
+                row[field] = finding["level"]
+            if finding["fixedVersion"]:
+                row["fixedVersions"].add(finding["fixedVersion"])
+    return [{**row, "fixedVersions": sorted(row["fixedVersions"])} for _, row in sorted(groups.items())
+            if "symbol" in (row["sourceLevel"], row["binaryLevel"])]
+
+
+def review_notice(revision, rows):
+    report = {"revision": revision, "symbolReviewCount": len(rows), "symbolReview": rows}
+    encoded = json.dumps(report, sort_keys=True, separators=(",", ":"))
+    if len(encoded.encode()) <= REVIEW_NOTICE_BYTES:
+        return encoded
+    return json.dumps({"revision": revision, "symbolReviewCount": len(rows), "details": "artifact"},
+                      sort_keys=True, separators=(",", ":"))
+
+
 def reason(error):
     return str(error) if isinstance(error, EvidenceError) else type(error).__name__
 
@@ -234,6 +263,7 @@ def main():
         report["sameDatabaseRevisionObserved"] = same_database
         require(same_database and all(scan["inventory"]["versionedModulesMatchBinary"] for scan in selected),
                 "scan database or module profiles differ")
+        report["symbolReview"] = compare_symbol_findings(source_scan, binary_scan)
         report["status"] = "complete"
     except errors as error:
         report["error"] = reason(error)
@@ -250,6 +280,7 @@ def main():
           f"binary advisories {binary_scan['advisoriesWithFindings']}, "
           f"binary symbols {binary_scan['advisoriesWithSymbolEvidence']}; "
           f"database {source_scan['databaseLastModified']}")
+    print("::notice title=Zcribe symbol review::" + review_notice(args.source_commit, report["symbolReview"]))
     return 0
 
 
