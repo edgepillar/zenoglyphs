@@ -10,3 +10,9 @@ disagreeing.
 |---|---|---|
 | `go-zenon/` (submodule) | the Zenon node implementation | GPL-3.0 |
 | `testdata/assets/p5.js` | p5.js 1.7.0, test content for composites | LGPL-2.1 (processing/p5.js) |
+| [JetBrains Mono original notice](web/dist/notices/fontsource-jetbrains-mono-5.3.0-LICENSE) | JetBrains Mono Variable from Fontsource 5.3.0, embedded WOFF2 assets | OFL-1.1 |
+| [Space Grotesk original notice](web/dist/notices/fontsource-space-grotesk-5.3.0-LICENSE) | Space Grotesk Variable from Fontsource 5.3.0, embedded WOFF2 assets | OFL-1.1 |
+
+Original font notices live under `web/dist/notices/` in the embedded viewer
+and under `web/ui/public/notices/` for the next viewer build. The font
+check compares both copies with the locked npm archives.

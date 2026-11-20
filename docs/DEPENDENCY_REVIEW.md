@@ -42,9 +42,10 @@ The Go job builds with committed `web/dist` bytes. The separate
 `embedded-viewer` job compares the checked-in WOFF2 files with the exact
 `@fontsource-variable/jetbrains-mono` and
 `@fontsource-variable/space-grotesk` archives from the npm lock. It records the
-archive member and original notice digests and checks which original notice
-bytes appear in the embedded tree. This check reads the two archives with
-explicit limits and keeps a compact JSON report.
+archive member and original notice digests and requires the original notice
+bytes in the embedded tree and the viewer's public source tree. This check
+reads the two archives with explicit limits and keeps a compact JSON report.
+[Fontsource publication source](https://github.com/fontsource/font-files/tree/02b28c06b126c852a5b966b44aef777ca923f6f6/fonts/variable)
 
 The viewer source check runs before toolchain setup and installation. The
 public snapshot omits `web/ui/src/wallet/abi.ts`, `cbor.ts`, `envelope.ts` and

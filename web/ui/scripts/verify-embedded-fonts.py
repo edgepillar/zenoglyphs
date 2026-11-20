@@ -83,10 +83,8 @@ def git(repo, *args):
     return subprocess.check_output(['git', *args], cwd=repo, timeout=10)
 
 
-def tracked_inputs(repo):
-    lock_path = 'web/ui/package-lock.json'
-    lock = git(repo, 'show', 'HEAD:' + lock_path)
-    tree = git(repo, 'ls-tree', '-rz', 'HEAD', '--', 'web/dist').split(b'\0')
+def tracked_file_pins(repo, directory):
+    tree = git(repo, 'ls-tree', '-rz', 'HEAD', '--', directory).split(b'\0')
     outputs = {}
     for entry in filter(None, tree):
         header, name = entry.decode('ascii').split('\t', 1)
@@ -96,11 +94,11 @@ def tracked_inputs(repo):
         require(len(raw) <= 2 << 20, 'Embedded viewer member exceeds the inspection limit')
         if name.endswith('.woff2'):
             require(raw.startswith(b'wOF2'), 'Invalid embedded WOFF2 file')
-        outputs[name.removeprefix('web/dist/')] = pin(raw)
-    return lock, outputs
+        outputs[name.removeprefix(directory + '/')] = pin(raw)
+    return outputs
 
 
-def review_outputs(outputs, publications):
+def review_outputs(outputs, public, publications):
     matched = {}
     for path, value in sorted(outputs.items()):
         if not path.endswith('.woff2'):
@@ -116,6 +114,11 @@ def review_outputs(outputs, publications):
     for row in publications:
         row['embeddedNoticeCopies'] = {name: sorted(path for path, value in outputs.items() if value == notice)
             for name, notice in row['notices'].items()}
+        row['matchingPublicNoticeCopies'] = {
+            name: [path for path in row['embeddedNoticeCopies'][name]
+                if path.startswith('notices/') and public.get(path) == notice]
+            for name, notice in row['notices'].items()
+        }
     return matched
 
 
@@ -124,17 +127,21 @@ def main():
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[3]
-    raw_lock, outputs = tracked_inputs(repo)
+    raw_lock = git(repo, 'show', 'HEAD:web/ui/package-lock.json')
+    outputs = tracked_file_pins(repo, 'web/dist')
+    public = tracked_file_pins(repo, 'web/ui/public')
     rows = json.loads(raw_lock)['packages']
     editions = [publication(name, rows['node_modules/' + name]) for name in PACKAGES]
-    matched = review_outputs(outputs, editions)
-    copies = sum(bool(targets) for row in editions for targets in row['embeddedNoticeCopies'].values())
+    matched = review_outputs(outputs, public, editions)
+    expected = sum(len(row['notices']) for row in editions)
+    copies = sum(bool(targets) for row in editions for targets in row['matchingPublicNoticeCopies'].values())
     source = git(repo, 'rev-parse', 'HEAD').decode().strip()
     data = {'schema': 1, 'sourceCommit': source, 'lock': pin(raw_lock),
         'runId': os.environ.get('GITHUB_RUN_ID'), 'attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
         'embeddedTree': git(repo, 'rev-parse', 'HEAD:web/dist').decode().strip(),
         'embeddedFiles': len(outputs), 'fontFiles': matched, 'archivedFontPublications': editions,
-        'embeddedExactNoticeCopies': copies, 'completeDistributionLicenseReview': False}
+        'originalNoticesChecked': expected, 'noticesMatchedInBothTrees': copies,
+        'completeDistributionLicenseReview': False}
     with args.report.open('x', encoding='utf-8') as stream:
         json.dump(data, stream, indent=2, sort_keys=True)
         stream.write('\n')
@@ -144,7 +151,10 @@ def main():
     for row in editions:
         files = sum(value['name'] == row['name'] for value in matched.values())
         notices = sum(bool(targets) for targets in row['embeddedNoticeCopies'].values())
-        print(f"- {row['name']}@{row['version']} accounts for {files} fonts and {notices} exact embedded notice copies.")
+        sources = sum(bool(targets) for targets in row['matchingPublicNoticeCopies'].values())
+        print(f"- {row['name']}@{row['version']} accounts for {files} fonts, {notices} exact embedded notice copies "
+            f"and {sources} corresponding public source copies.")
+    require(copies == expected, 'The embedded viewer or the build public source lacks an original font notice')
 
 
 if __name__ == '__main__':

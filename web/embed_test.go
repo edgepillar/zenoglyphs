@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -63,5 +64,29 @@ func TestHandlerServesReferencedAssets(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Error("index.html references no local assets; the build looks wrong")
+	}
+}
+
+func TestHandlerServesOriginalFontNotices(t *testing.T) {
+	handler := Handler()
+	for _, name := range []string{
+		"fontsource-jetbrains-mono-5.3.0-LICENSE",
+		"fontsource-space-grotesk-5.3.0-LICENSE",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := "/notices/" + name
+			want, err := fs.ReadFile(files, "dist"+path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(want, []byte("SIL OPEN FONT LICENSE")) {
+				t.Fatal("embedded font notice is missing its license text")
+			}
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+			if recorder.Code != http.StatusOK || !bytes.Equal(recorder.Body.Bytes(), want) {
+				t.Fatalf("handler did not serve the original embedded notice, status %d", recorder.Code)
+			}
+		})
 	}
 }
