@@ -41,6 +41,18 @@ The artifact contains these records and the executable's SHA-256 and size.
 [Go binary build information](https://pkg.go.dev/cmd/go#hdr-Print_Go_version) ·
 [Go 1.26 release history](https://go.dev/doc/devel/release#go1.26.11)
 
+The same job installs govulncheck 1.10.0 with Go 1.26.11 and checks the
+scanner's module version and checksum. It scans the `./cmd/zcribe` package
+and the already-built executable. Both reports record the scanner's module
+inventory, database update time, advisory records and module, package or
+symbol-level findings. The check compares the reported versioned modules with
+the binary's selected modules and checks that the two scans saw the same
+database update time and shared advisory records. The job keeps the report
+with the build inputs. Reviewers still assess the reported source paths
+and binary symbols in the context of the shipped configuration.
+[Govulncheck](https://pkg.go.dev/golang.org/x/vuln@v1.10.0/cmd/govulncheck) ·
+[Go vulnerability database](https://go.dev/doc/security/vuln/)
+
 `web/ui/go.mod` is an intentional module boundary that excludes UI files and
 `node_modules` from the parent Go traversal. It is not a separately built Go
 application and is not a second Go updater root. Review real UI inputs through
